@@ -1,0 +1,4 @@
+name = "TGVDenoise"
+uuid = "76fad05a-10e1-459a-b083-fc81202792cd"
+version = "0.1.0"
+authors = ["Brandon Flores <bsflores@wisc.edu>"]
