@@ -13,6 +13,7 @@ function dx_minus(u)
     s = size(v,1)
     v[2:(s-1),:] .= u[2:(s-1),:] - u[1:(s-2),:]
     v[s,:] .= -u[s,:]
+    return v
 end
 
 function dy_plus(u)
@@ -28,6 +29,7 @@ function dy_minus(u)
     s = size(v,2)
     v[:,2:(s-1)] .= u[:,2:(s-1)] - u[:,1:(s-2)]
     v[:,s] .= -u[:,s]
+    return v
 end
 
 function d_plus(u, dim)
@@ -47,6 +49,7 @@ function d_minus(u, dim)
     v[i...] .= u[i...] - u[(i .- 1)...]
     j = ntuple(n -> ifelse(n === dim, s, :), dim)
     v[j...] .= -u[j...]
+    return v
 end
 
 """
@@ -76,64 +79,64 @@ function tgv_denoise_mono(
     tolmean = 1e-6,
     tolsup = 1e-4
 )
-    # TGV parameters
-    a0 = beta
-    a1 = alpha
-    N = iterations
     # initializations
-    u_old = copy(data)
-    u_bar = copy(data)
+    u_old = copy(image)
+    u_bar = copy(image)
     p_old = zeros(eltype(image), size(image)..., 2)
     p_bar = zeros(eltype(image), size(image)..., 2)
     v = zeros(eltype(image), size(image)..., 2)
     w = zeros(eltype(image), size(image)..., 2, 2)
     L2 = 8
-
     k = 1
-    while k <= iter
+    while k <= iterations
         tau = inv(k+1)
         sigma = (k+1) / L2
-        # TODO: for the steps z[z < 1], we effectively have a ReLU function + 1
+        # TODO: for the steps z[z .< 1], we effectively have a ReLU function + 1
         # What happens if we change it to something different?
-        v[:,:,1] += sigma * dx_plus(u_bar) - p_bar[:,:,1]
-        v[:,:,2] += sigma * dx_plus(u_bar) - p_bar[:,:,2]
-        z = hypot.(v[:,:,1], v[:,:,2]) / a1
-        z[z < 1] = 1
+        v[:,:,1] .+= sigma .* dx_plus(u_bar) .- p_bar[:,:,1]
+        v[:,:,2] .+= sigma .* dy_plus(u_bar) .- p_bar[:,:,2]
+        z = hypot.(v[:,:,1], v[:,:,2]) / alpha
+        z[z .< 1] .= 1
+        # v ./= z
         v[:,:,1] ./= z
         v[:,:,2] ./= z
 
         w[:,:,1,1] .+= sigma * dx_minus(p_bar[:,:,1])
-        w[:,:,2,2] .+= sigma * dx_minus(p_bar[:,:,2])
-        w[:,:,2,1] .= w[:,:,1,2] .+= sigma * (dy_minus(p_bar[:,:,1]) + dx_minus(p_bar[:,:,2])) / 2
-        z = hypot.(w[:,:,1,1], w[:,:,1,2], w[:,:,1,2]) / a0
-        z[z < 1] = 1
+        w[:,:,2,2] .+= sigma * dy_minus(p_bar[:,:,2])
+        w[:,:,1,2] .+= sigma * (dy_minus(p_bar[:,:,1]) + dx_minus(p_bar[:,:,2])) / 2
+        w[:,:,2,1] .= w[:,:,1,2]
+        z = hypot.(w[:,:,1,1], w[:,:,1,2], w[:,:,1,2]) / beta
+        z[z .< 1] .= 1
+        # w ./ z
         w[:,:,1,1] ./= z
         w[:,:,2,2] ./= z
-        w[:,:,2,1] .= w[:,:,1,2] ./= z
+        w[:,:,1,2] ./= z
+        w[:,:,2,1] .= w[:,:,1,2]
 
-        u_new = (u_old + tau*(dx_minus(v[:,:,1]) + dy_minus(v[:,:,2]) + image)) / (1+tau)
+        u_new = (u_old .+ tau .* (dx_minus(v[:,:,1]) .+ dy_minus(v[:,:,2]) .+ image)) ./ (1+tau)
         # Check if we need to exit early
-        change = abs.(uold - unew)
+        change = abs.(u_new - u_old)
         max_change = maximum(change)
         mean_change = sum(change) / length(change)
         if (max_change <= tolsup || mean_change <= tolmean)
             @info "Reached termination criteria at $k iterations!\n" *
-                "\nmaximum change: $max_change" * "\nmean change: $mean_change"
+                "\n\tmaximum change: $max_change" * "\n\tmean change: $mean_change"
             break
         end
 
-        p_new[:,:,1] .= p_old[:,:,1] + tau*(v[:,:,1] + dx_plus(w[:,:,1,1]) + dy_plus(w[:,:,1,2]))
-        p_new[:,:,2] .= p_old[:,:,2] + tau*(v[:,:,2] + dx_plus(w[:,:,1,2]) + dy_plus(w[:,:,2,2]))
+        p_new = zeros(eltype(p_old), size(p_old))
+        p_new[:,:,1] .= p_old[:,:,1] .+ tau .* (v[:,:,1] .+ dx_plus(w[:,:,1,1]) .+ dy_plus(w[:,:,1,2]))
+        p_new[:,:,2] .= p_old[:,:,2] .+ tau .* (v[:,:,2] .+ dx_plus(w[:,:,1,2]) .+ dy_plus(w[:,:,2,2]))
         p_bar[:,:,1] .= 2*p_new[:,:,1] - p_old[:,:,1]
         p_bar[:,:,2] .= 2*p_new[:,:,2] - p_old[:,:,2]
         u_bar .= 2 * u_new - u_old
         u_old .= u_new
         p_old .= p_new
 
-        @debug "At iteration $k:\n\tmaximum change: $max_change\nmean change: $mean_change"
+        @info "At iteration $k:\n\tmaximum change: $max_change\n\tmean change: $mean_change"
         k += 1
     end
-    return u_new
+    return u_old
 end
 
 export tgv_denoise_mono
