@@ -53,6 +53,30 @@ function d_minus(u, dim)
 end
 
 """
+    sfdiff(image, dim)
+
+Calculates a symmetric finite difference of an image along dimension `dim`.
+(This is the average of the left and right finite differences)
+"""
+function sfdiff(image, dim)
+    result = zero(image)
+    i1 = ntuple(
+        n -> ifelse(n === dim, firstindex(image, dim):(lastindex(image, dim) - 1), :),
+        Val(ndims(image))
+    )
+    i2 = ntuple(
+        n -> ifelse(n === dim, (firstindex(image, dim) + 1):lastindex(image, dim), :),
+        Val(ndims(image))
+    )
+    tmp = (image[i2...] .- image[i1...]) / 2
+    result[i1...] .+= tmp
+    result[i2...] .+= tmp
+    return result
+end
+
+sfdiff(image) = stack(sfdiff(image, n) for n in 1:ndims(image))
+
+"""
     tgv_denoise_mono(
         image,
         alpha,
@@ -137,6 +161,17 @@ function tgv_denoise_mono(
         k += 1
     end
     return u_old
+end
+
+function tgv_denoise_luminance(
+    image,
+    alpha,
+    beta;
+    iterations = 1000,
+    tolmean = 1e-6,
+    tolsup = 1e-4
+)
+    ndims(image) == 2 && tgv_denoise_mono(image, alpha, beta; iterations)
 end
 
 export tgv_denoise_mono
