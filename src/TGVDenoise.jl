@@ -1,5 +1,16 @@
 module TGVDenoise
 
+#= General rules for treating inputs:
+  - If a 2D array is provided as input, treat it as raw monochrome image data if the element type is
+    a Number, or a color image if a type from ColorTypes.jl is used.
+  - If a 3D array is provided as input, try to treat it as a color image
+    Check if the last axis has size 3
+    If not, check the first axis
+    Finally, error
+  - Images of different dimensionalities should explicitly have their element types explicitly given
+    as a ColorTypes.jl type (even a Gray type if needed)
+=#
+
 function dx_plus(u)
     v = zero(u)
     s = size(v,1)
@@ -163,17 +174,93 @@ function tgv_denoise_mono(
     return u_old
 end
 
+"""
+    tgv_denoise_channels(
+        image,
+        alpha,
+        beta;
+        iterations = 1000,
+        tolmean = 1e-6,
+        tolsup = 1e-4
+    )
+
+Performs total generalized variation (TGV) denoising on each channel of a color image independently.
+
+The `alpha` and `beta` parameters are the regularization parameters for the optimization.
+
+The `tolmean` and `tolsup` parameters are used to determine whether the iterations should terminate
+early.
+`tolmean` is the mean change in pixel values between iterations, and `tolsup` is the maximum change
+that occurred at a particular iteration.
+"""
+function tgv_denoise_channels(
+    image,
+    alpha,
+    beta;
+    kwargs...
+)
+    if ndims(image) == 2 && eltype(image) <: Number
+        # Treat image as monochrome
+        return tgv_denoise_mono(image, alpha, beta; kwargs...)
+    elseif ndims(image) == 3
+        # Try to treat image as RGB
+        # Sum RGB data to create luminance channel
+        if last(size(image)) == 3
+            return stack(tgv_denoise_mono.(eachslice(image, dims=3), alpha, beta; kwargs...))g
+        elseif first(size(image)) == 3
+            return stack(tgv_denoise_mono.(eachslice(image, dims=1), alpha, beta; kwargs...))
+        end
+    end
+    throw(DimensionMismatch("Unreadable image format")) # TODO: better explanation
+end
+
+"""
+    tgv_denoise_luminance(
+        image,
+        alpha,
+        beta;
+        iterations = 1000,
+        tolmean = 1e-6,
+        tolsup = 1e-4
+    )
+
+Performs total generalized variation (TGV) denoising on only the luminance component of a monochrome
+image.
+The luminance component is calculated by summing the RGB values of the image, denoised with the TGV
+algorithm, and combined with the 
+
+The `alpha` and `beta` parameters are the regularization parameters for the optimization.
+
+The `tolmean` and `tolsup` parameters are used to determine whether the iterations should terminate
+early.
+`tolmean` is the mean change in pixel values between iterations, and `tolsup` is the maximum change
+that occurred at a particular iteration.
+"""
 function tgv_denoise_luminance(
     image,
     alpha,
     beta;
-    iterations = 1000,
-    tolmean = 1e-6,
-    tolsup = 1e-4
+    kwargs...
 )
-    ndims(image) == 2 && tgv_denoise_mono(image, alpha, beta; iterations)
+    if ndims(image) == 2 && eltype(image) <: Number
+        # Treat image as monochrome
+        return tgv_denoise_mono(image, alpha, beta; kwargs...)
+    elseif ndims(image) == 3
+        # Try to treat image as RGB
+        # Sum RGB data to create luminance channel
+        if last(size(image)) == 3
+            image_L = sum(eachslice(image, dims=3))
+            denoised_L = tgv_denoise_mono(image_L, alpha, beta; kwargs...)
+            return stack(denoised_L .* c ./ image_L for c in eachslice(image, dims=3))
+        elseif first(size(image)) == 3
+            image_L = sum(eachslice(image, dims=1))
+            denoised_L = tgv_denoise_mono(image_L, alpha, beta; kwargs...)
+            return stack(denoised_L .* c ./ image_L for c in eachslice(image, dims=1))
+        end
+    end
+    throw(DimensionMismatch("Unreadable image format")) # TODO: better explanation
 end
 
-export tgv_denoise_mono
+export tgv_denoise_mono, tgv_denoise_channels, tgv_denoise_luminance
 
 end # module TGVDenoise
