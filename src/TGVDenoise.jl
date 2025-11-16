@@ -115,7 +115,7 @@ function tgv_denoise_mono(
     image,
     alpha,
     beta;
-    iterations = 1000,
+    iterations = 10,
     tolmean = 1e-6,
     tolsup = 1e-4,
     strength = 1
@@ -219,7 +219,7 @@ function tgv_denoise_channels(
         # Try to treat image as RGB
         # Sum RGB data to create luminance channel
         if last(size(image)) == 3
-            return stack(tgv_denoise_mono.(eachslice(image, dims=3), alpha, beta; kwargs...))g
+            return stack(tgv_denoise_mono.(eachslice(image, dims=3), alpha, beta; kwargs...))
         elseif first(size(image)) == 3
             return stack(tgv_denoise_mono.(eachslice(image, dims=1), alpha, beta; kwargs...))
         end
