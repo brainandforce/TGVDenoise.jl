@@ -94,7 +94,8 @@ sfdiff(image) = stack(sfdiff(image, n) for n in 1:ndims(image))
         beta;
         iterations = 1000,
         tolmean = 1e-6,
-        tolsup = 1e-4
+        tolsup = 1e-4,
+        strength = 1
     )
 
 Performs total generalized variation (TGV) denoising on a monochrome image.
@@ -105,6 +106,10 @@ The `tolmean` and `tolsup` parameters are used to determine whether the iteratio
 early.
 `tolmean` is the mean change in pixel values between iterations, and `tolsup` is the maximum change
 that occurred at a particular iteration.
+
+`strength` is either a value between 0 and 1 that determines the proportion of the denoised image to
+combine with the final image, or an array of values between 0 and 1 with the same dimensions as the
+input image determining the denoising strength for each individual pixel.
 """
 function tgv_denoise_mono(
     image,
@@ -112,8 +117,13 @@ function tgv_denoise_mono(
     beta;
     iterations = 1000,
     tolmean = 1e-6,
-    tolsup = 1e-4
+    tolsup = 1e-4,
+    strength = 1
 )
+    all(iszero, strength) && return copy(image)
+    if any(x -> x < 0, strength) || any(x -> x > 1, strength)
+        throw(ArgumentError("Denoising strength must be between 0 and 1"))
+    end
     # initializations
     u_old = copy(image)
     u_bar = copy(image)
@@ -171,7 +181,10 @@ function tgv_denoise_mono(
         @info "At iteration $k:\n\tmaximum change: $max_change\n\tmean change: $mean_change"
         k += 1
     end
-    return u_old
+    all(isone, strength) && return u_old
+    # Don't promote the element type of the result
+    _strength = convert.(eltype(image), strength)
+    return (u_old .* _strength) .+ (image .* (1 - _strength))
 end
 
 """
