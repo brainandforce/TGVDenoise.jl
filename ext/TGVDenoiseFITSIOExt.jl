@@ -12,8 +12,8 @@ function tgv_denoise_channels!(
     kwargs...
 )
     denoised = TGVDenoise.tgv_denoise_channels(read(hdu), alpha, beta; kwargs...)
-    write(denoised, hdu)
-    return hdu
+    write(hdu, denoised)
+    return denoised
 end
 
 function tgv_denoise_channels!(
