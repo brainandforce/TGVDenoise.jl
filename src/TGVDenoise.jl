@@ -274,6 +274,8 @@ function tgv_denoise_luminance(
     throw(DimensionMismatch("Unreadable image format")) # TODO: better explanation
 end
 
-export tgv_denoise_mono, tgv_denoise_channels, tgv_denoise_luminance
+include("color.jl")
+
+export tgv_denoise_mono, tgv_denoise_channels, tgv_denoise_luminance, tgv_denoise_color
 
 end # module TGVDenoise
