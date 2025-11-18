@@ -2,6 +2,13 @@
 
 This package implements total generalized variation (TGV) denoising in Julia.
 
+## Installation
+
+This package isn't registered yet, so you'll want to install it directly from this repo:
+```
+(@v1.12) pkg> add https://github.com/brainandforce/TGVDenoise.jl.git
+```
+
 ## Copyright information
 
 Copyright © 2025 Brandon Flores
