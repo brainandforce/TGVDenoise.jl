@@ -2,3 +2,12 @@ name = "TGVDenoise"
 uuid = "76fad05a-10e1-459a-b083-fc81202792cd"
 version = "0.1.0"
 authors = ["Brandon Flores <bsflores@wisc.edu>"]
+
+[weakdeps]
+FITSIO = "525bcba6-941b-5504-bd06-fd0dc1a4d2eb"
+
+[extensions]
+TGVDenoiseFITSIOExt = "FITSIO"
+
+[compat]
+FITSIO = "0.17.5"
