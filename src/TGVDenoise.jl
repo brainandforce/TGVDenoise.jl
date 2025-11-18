@@ -275,6 +275,7 @@ function tgv_denoise_luminance(
 end
 
 include("color.jl")
+include("multithread.jl")
 
 export tgv_denoise_mono, tgv_denoise_channels, tgv_denoise_luminance, tgv_denoise_color
 

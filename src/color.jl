@@ -116,12 +116,14 @@ function tgv_denoise_color(
         # Try to treat image as RGB
         # Sum RGB data to create luminance channel
         if last(size(image)) == 3
-            ycocg_image = rgb_to_ycocg(view(image, :, :, inds); colordim = 3)
-            result_ycocg = tgv_denoise_channels(ycocg_image, alpha, beta; kwargs...)
+            colordim = 3
+            ycocg_image = rgb_to_ycocg(view(image, :, :, inds); colordim)
+            result_ycocg = tgv_denoise_multithreaded(ycocg_image, alpha, beta; colordim, kwargs...)
             return ycocg_to_rgb(result_ycocg)[:,:,inds]
         elseif first(size(image)) == 3
-            ycocg_image = rgb_to_ycocg(view(image, inds, :, :); colordim = 1)
-            result_ycocg = tgv_denoise_channels(ycocg_image, alpha, beta; kwargs...)
+            colordim = 1
+            ycocg_image = rgb_to_ycocg(view(image, inds, :, :); colordim)
+            result_ycocg = tgv_denoise_multithreaded(ycocg_image, alpha, beta; colordim, kwargs...)
             return ycocg_to_rgb(result_ycocg)[inds,:,:]
         end
     end
