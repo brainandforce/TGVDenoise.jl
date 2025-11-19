@@ -15,7 +15,7 @@ function dx_plus(u)
     v = zero(u)
     s = size(v,1)
     v[1,:] .= u[1,:]
-    v[1:(s-1),:] = u[2:s,:] - u[1:(s-1),:]
+    v[1:(s-1),:] .= u[2:s,:] .- u[1:(s-1),:]
     return v
 end
 
@@ -31,7 +31,7 @@ function dy_plus(u)
     v = zero(u)
     s = size(v,2)
     v[:,1] .= u[:,1]
-    v[:,1:(s-1)] = u[:,2:s] - u[:,1:(s-1)]
+    v[:,1:(s-1)] .= u[:,2:s] .- u[:,1:(s-1)]
     return v
 end
 
@@ -206,17 +206,17 @@ function tgv_denoise_mono(
         # What happens if we change it to something different?
         v[:,:,1] .+= sigma .* dx_plus(u_bar) .- p_bar[:,:,1]
         v[:,:,2] .+= sigma .* dy_plus(u_bar) .- p_bar[:,:,2]
-        z = hypot.(v[:,:,1], v[:,:,2]) / alpha
+        z = hypot.(v[:,:,1], v[:,:,2]) ./ alpha
         z[z .< 1] .= 1
         # v ./= z
         v[:,:,1] ./= z
         v[:,:,2] ./= z
 
-        w[:,:,1,1] .+= sigma * dx_minus(p_bar[:,:,1])
-        w[:,:,2,2] .+= sigma * dy_minus(p_bar[:,:,2])
-        w[:,:,1,2] .+= sigma * (dy_minus(p_bar[:,:,1]) + dx_minus(p_bar[:,:,2])) / 2
+        w[:,:,1,1] .+= sigma .* dx_minus(p_bar[:,:,1])
+        w[:,:,2,2] .+= sigma .* dy_minus(p_bar[:,:,2])
+        w[:,:,1,2] .+= sigma .* (dy_minus(p_bar[:,:,1]) .+ dx_minus(p_bar[:,:,2])) ./ 2
         w[:,:,2,1] .= w[:,:,1,2]
-        z = hypot.(w[:,:,1,1], w[:,:,1,2], w[:,:,1,2]) / beta
+        z = hypot.(w[:,:,1,1], w[:,:,1,2], w[:,:,1,2]) ./ beta
         z[z .< 1] .= 1
         # w ./ z
         w[:,:,1,1] ./= z
@@ -238,9 +238,9 @@ function tgv_denoise_mono(
         p_new = zeros(eltype(p_old), size(p_old))
         p_new[:,:,1] .= p_old[:,:,1] .+ tau .* (v[:,:,1] .+ dx_plus(w[:,:,1,1]) .+ dy_plus(w[:,:,1,2]))
         p_new[:,:,2] .= p_old[:,:,2] .+ tau .* (v[:,:,2] .+ dx_plus(w[:,:,1,2]) .+ dy_plus(w[:,:,2,2]))
-        p_bar[:,:,1] .= 2*p_new[:,:,1] - p_old[:,:,1]
-        p_bar[:,:,2] .= 2*p_new[:,:,2] - p_old[:,:,2]
-        u_bar .= 2 * u_new - u_old
+        p_bar[:,:,1] .= 2 .* p_new[:,:,1] .- p_old[:,:,1]
+        p_bar[:,:,2] .= 2 .* p_new[:,:,2] .- p_old[:,:,2]
+        u_bar .= 2 .* u_new .- u_old
         u_old .= u_new
         p_old .= p_new
 
