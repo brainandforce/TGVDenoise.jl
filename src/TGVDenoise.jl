@@ -43,6 +43,11 @@ function dy_minus(u)
     return v
 end
 
+"""
+    TGVDenoise.d_plus(u, dim)
+
+Forward difference operator along dimension `dim`.
+"""
 function d_plus(u, dim)
     v = zero(u)
     s = size(v, dim)
@@ -53,6 +58,11 @@ function d_plus(u, dim)
     return v
 end
 
+"""
+    TGVDenoise.d_minus(u, dim)
+
+Backward difference operator along dimension `dim`.
+"""
 function d_minus(u, dim)
     v = copy(u)
     s = size(v, dim)
