@@ -43,59 +43,115 @@ function dy_minus(u)
     return v
 end
 
-"""
-    TGVDenoise.d_plus(u, dim)
+function forward_index(i::CartesianIndex{N}, dim) where N
+    return CartesianIndex(ntuple(n -> i[n] + (n == dim), Val(N)))
+end
 
-Forward difference operator along dimension `dim`.
-"""
-function d_plus(u, dim)
-    v = zero(u)
-    s = size(v, dim)
-    i = ntuple(n -> ifelse(n === dim, 1, :), dim)
-    v[i...] .= u[i...]
-    j = ntuple(n -> ifelse(n === dim, firstindex(v, dim):(lastindex(v, dim) - 1), :), dim)
-    v[j...] .= u[(j .+ 1)...] - u[j...]
-    return v
+function backward_index(i::CartesianIndex{N}, dim) where N
+    return CartesianIndex(ntuple(n -> i[n] - (n == dim), Val(N)))
 end
 
 """
-    TGVDenoise.d_minus(u, dim)
+    TGVDenoise.d_central!(out, data, dim)
 
-Backward difference operator along dimension `dim`.
+Performs a central difference approximation of `data` along dimension `dim`, storing the result in
+an identically sized destination, `out`, without allocations.
 """
-function d_minus(u, dim)
-    v = copy(u)
-    s = size(v, dim)
-    i = ntuple(n -> ifelse(n === dim, (firstindex(v, dim)+ 1):(lastindex(v, dim) - 1), :), dim)
-    v[i...] .= u[i...] - u[(i .- 1)...]
-    j = ntuple(n -> ifelse(n === dim, s, :), dim)
-    v[j...] .= -u[j...]
-    return v
-end
-
-"""
-    sfdiff(image, dim)
-
-Calculates a symmetric finite difference of an image along dimension `dim`.
-(This is the average of the left and right finite differences)
-"""
-function sfdiff(image, dim)
-    result = zero(image)
-    i1 = ntuple(
-        n -> ifelse(n === dim, firstindex(image, dim):(lastindex(image, dim) - 1), :),
-        Val(ndims(image))
+function d_central!(out, data, dim)
+    # Check for matching dimensions before doing anything
+    size(out) == size(data) || throw(
+        DimensionMismatch("Output must have size equal to the input ($(size(data))).")
     )
-    i2 = ntuple(
-        n -> ifelse(n === dim, (firstindex(image, dim) + 1):lastindex(image, dim), :),
-        Val(ndims(image))
-    )
-    tmp = (image[i2...] .- image[i1...]) / 2
-    result[i1...] .+= tmp
-    result[i2...] .+= tmp
-    return result
+    @inbounds for i in CartesianIndices(data)
+        if i[dim] == firstindex(data, dim)
+            out[i] = (data[forward_index(i, dim)] - data[i]) / 2
+        elseif i[dim] == lastindex(data, dim)
+            out[i] = (data[i] - data[backward_index(i, dim)]) / 2
+        else
+            out[i] = (data[forward_index(i, dim)] - data[backward_index(i, dim)]) / 2
+        end
+    end
+    return out
 end
 
-sfdiff(image) = stack(sfdiff(image, n) for n in 1:ndims(image))
+"""
+    d_central!(out, data)
+
+Performs a central difference approximation of `data` along all dimensions, storing the result in
+`out` without allocations.
+"""
+function d_central!(out, data)
+    sz = tuple(size(data)..., ndims(data))
+    size(out) == sz || throw(
+        DimensionMismatch("Output must have size equal to the input ($sz).")
+    )
+    for d in 1:ndims(data)
+        d_central!(view(out, ntuple(Returns(:), Val(ndims(data)))..., d), data, d)
+    end
+    return out
+end
+
+"""
+    d_central!(out, data, [dim])
+
+Performs a central difference approximation of `data` along all dimensions, returning a new array.
+The central difference is taken along `dim` if provided; if it is not provided the central 
+difference is taken along all dimensions, and a larger array (of size
+`(size(data)..., ndims(data))`) is returned.
+"""
+d_central(data, dim) = d_central!(similar(data), data, dim)
+d_central(data) = d_central!(similar(data, size(data)..., ndims(data)), data, dim)
+
+#=
+"""
+    TGVDenoise.d_plus!(out, data, dim)
+
+Performs a forward finite difference approximation of `data` along dimension `dim`, storing the 
+result in an identically sized destination, `out`, without allocations.
+"""
+function d_plus!(out, data, dim)
+    # Check for matching dimensions before doing anything
+    size(out) == size(data) || throw(
+        DimensionMismatch("Output must have size equal to the input ($(size(data))).")
+    )
+    @inbounds for i in CartesianIndices(data)
+        if i[dim] == lastindex(data, dim)
+            out[i] = (data[i] - data[backward_index(i, dim)]) / 2
+        else
+            out[i] = data[forward_index(i, dim)] - data[i]
+        end
+    end
+    return out
+end
+
+"""
+    d_plus!(out, data)
+
+Performs a forward finite difference approximation of `data` along all dimensions, storing the 
+result in `out` without allocations.
+"""
+function d_plus!(out, data)
+    sz = tuple(size(data)..., ndims(data))
+    size(out) == sz || throw(
+        DimensionMismatch("Output must have size equal to the input ($sz).")
+    )
+    for d in 1:ndims(data)
+        d_plus!(view(out, ntuple(Returns(:), Val(ndims(data)))..., d), data, d)
+    end
+    return out
+end
+
+"""
+    d_plus!(out, data, [dim])
+
+Performs a central difference approximation of `data` along all dimensions, returning a new array.
+The central difference is taken along `dim` if provided; if it is not provided the central 
+difference is taken along all dimensions, and a larger array (of size
+`(size(data)..., ndims(data))`) is returned.
+"""
+d_plus(data, dim) = d_plus!(similar(data), data, dim)
+d_plus(data) = d_plus!(similar(data, size(data)..., ndims(data)), data, dim)
+=#
 
 """
     tgv_denoise_mono(
