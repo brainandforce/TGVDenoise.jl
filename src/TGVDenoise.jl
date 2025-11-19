@@ -100,7 +100,18 @@ difference is taken along all dimensions, and a larger array (of size
 `(size(data)..., ndims(data))`) is returned.
 """
 d_central(data, dim) = d_central!(similar(data), data, dim)
-d_central(data) = d_central!(similar(data, size(data)..., ndims(data)), data, dim)
+d_central(data) = d_central!(similar(data, size(data)..., ndims(data)), data)
+
+reduce_drop(op, itr; dims, kw...) = dropdims(reduce(op, itr; dims, kw...); dims)
+
+#=
+function reduce_drop(::typeof(hypot), itr; init = zero(eltype(itr)), dims, kw...)
+    sz = ntuple(n -> ifelse(n in dims, 1, size(itr, n)), Val(ndims(itr)))
+    result = similar(itr, sz)
+
+    return dropdims(result; dims)
+end
+=#
 
 #=
 """
@@ -150,7 +161,7 @@ difference is taken along all dimensions, and a larger array (of size
 `(size(data)..., ndims(data))`) is returned.
 """
 d_plus(data, dim) = d_plus!(similar(data), data, dim)
-d_plus(data) = d_plus!(similar(data, size(data)..., ndims(data)), data, dim)
+d_plus(data) = d_plus!(similar(data, size(data)..., ndims(data)), data)
 =#
 
 """
@@ -191,66 +202,79 @@ function tgv_denoise_mono(
         throw(ArgumentError("Denoising strength must be between 0 and 1"))
     end
     # initializations
-    u_old = copy(image)
+    u_new = copy(image)
+    u_old = similar(u_new)
     u_bar = copy(image)
-    p_old = zeros(eltype(image), size(image)..., 2)
+    p_new = zeros(eltype(image), size(image)..., 2)
+    p_old = similar(p_new)
     p_bar = zeros(eltype(image), size(image)..., 2)
     v = zeros(eltype(image), size(image)..., 2)
     w = zeros(eltype(image), size(image)..., 2, 2)
+    du_bar = similar(v) # reuse to store derivatives
+    dp_bar = similar(w)
+    z = similar(image)  # temporary array
     L2 = 8
     k = 1
     while k <= iterations
+        u_old .= u_new
+        p_old .= p_new
+
         tau = inv(k+1)
         sigma = (k+1) / L2
         # TODO: for the steps z[z .< 1], we effectively have a ReLU function + 1
         # What happens if we change it to something different?
-        v[:,:,1] .+= sigma .* dx_plus(u_bar) .- p_bar[:,:,1]
-        v[:,:,2] .+= sigma .* dy_plus(u_bar) .- p_bar[:,:,2]
-        z = hypot.(v[:,:,1], v[:,:,2]) ./ alpha
+        v .+= sigma .* d_central!(du_bar, u_bar) .- p_bar
+        z .= reduce_drop(hypot, v, dims=3, init=zero(eltype(v))) ./ alpha
         z[z .< 1] .= 1
-        # v ./= z
-        v[:,:,1] ./= z
-        v[:,:,2] ./= z
+        for n in 1:ndims(image)
+            v[:,:,n] ./= z
+        end
 
-        w[:,:,1,1] .+= sigma .* dx_minus(p_bar[:,:,1])
-        w[:,:,2,2] .+= sigma .* dy_minus(p_bar[:,:,2])
-        w[:,:,1,2] .+= sigma .* (dy_minus(p_bar[:,:,1]) .+ dx_minus(p_bar[:,:,2])) ./ 2
-        w[:,:,2,1] .= w[:,:,1,2]
-        z = hypot.(w[:,:,1,1], w[:,:,1,2], w[:,:,1,2]) ./ beta
+        # Take the unsymmetrized derivative of p_bar
+        for n in 1:ndims(image)
+            d_central!(view(dp_bar, :, :, n, :), view(p_bar, :, :, n))
+        end
+        # Add the derivative in a symmetrized fashion
+        w .+= (sigma / 2) .* dp_bar
+        w .+= (sigma / 2) .* permutedims(dp_bar, (1, 2, 4, 3))
+        z .= reduce_drop(hypot, w, dims=(3,4), init=zero(eltype(v))) ./ beta
         z[z .< 1] .= 1
-        # w ./ z
-        w[:,:,1,1] ./= z
-        w[:,:,2,2] ./= z
-        w[:,:,1,2] ./= z
-        w[:,:,2,1] .= w[:,:,1,2]
+        for (a,b) in Iterators.product(1:ndims(image), 1:ndims(image))
+            w[:,:,a,b] ./= z
+        end
 
-        u_new = (u_old .+ tau .* (dx_minus(v[:,:,1]) .+ dy_minus(v[:,:,2]) .+ image)) ./ (1+tau)
+        u_new .+= tau .* (d_central(@view(v[:,:,1]), 1) .+ d_central(@view(v[:,:,2]), 2) .+ image)
+        u_new ./= (1 + tau)
+        
         # Check if we need to exit early
         change = abs.(u_new - u_old)
         max_change = maximum(change)
         mean_change = sum(change) / length(change)
+        level_change = (sum(u_new) ./ sum(u_old))
         if (max_change <= tolsup || mean_change <= tolmean)
             @info "Reached termination criteria at $k iterations!\n" *
-                "\n\tmaximum change: $max_change" * "\n\tmean change: $mean_change"
+                "\n\tmaximum change: $max_change" *
+                "\n\tmean change: $mean_change" *
+                "\n\tmean pixel value ratio: $level_change"
             break
         end
-
-        p_new = zeros(eltype(p_old), size(p_old))
-        p_new[:,:,1] .= p_old[:,:,1] .+ tau .* (v[:,:,1] .+ dx_plus(w[:,:,1,1]) .+ dy_plus(w[:,:,1,2]))
-        p_new[:,:,2] .= p_old[:,:,2] .+ tau .* (v[:,:,2] .+ dx_plus(w[:,:,1,2]) .+ dy_plus(w[:,:,2,2]))
-        p_bar[:,:,1] .= 2 .* p_new[:,:,1] .- p_old[:,:,1]
-        p_bar[:,:,2] .= 2 .* p_new[:,:,2] .- p_old[:,:,2]
+        
+        p_new .+= tau .* v
+        p_new[:,:,1] .+= tau .* (d_central(@view(w[:,:,1,1]), 1) .+ d_central(@view(w[:,:,1,2]), 2))
+        p_new[:,:,2] .+= tau .* (d_central(@view(w[:,:,1,2]), 1) .+ d_central(@view(w[:,:,2,2]), 2))
+        p_bar .= 2 .* p_new .- p_old
         u_bar .= 2 .* u_new .- u_old
-        u_old .= u_new
-        p_old .= p_new
 
-        @info "At iteration $k:\n\tmaximum change: $max_change\n\tmean change: $mean_change"
+        @info "At iteration $k:" * 
+            "\n\tmaximum change: $max_change" * 
+            "\n\tmean change: $mean_change" *
+            "\n\tmean pixel value ratio: $level_change"
         k += 1
     end
-    all(isone, strength) && return u_old
+    all(isone, strength) && return u_new
     # Don't promote the element type of the result
     _strength = convert.(eltype(image), strength)
-    return (u_old .* _strength) .+ (image .* (1 - _strength))
+    return (u_new .* _strength) .+ (image .* (1 .- _strength))
 end
 
 """
